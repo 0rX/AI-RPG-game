@@ -22,6 +22,19 @@ function normalizeDirection(input: string) {
   return direction && directionSet.has(direction) ? direction : null;
 }
 
+/**
+ * Returns an array of full Item objects currently in the player's inventory
+ */
+export function getInventoryItems(world: World, session: SessionState): (Item & PlayerInventoryItem)[] {
+  return session.inventory.map(invItem => {
+    const worldItem = world.items.find(w => w.id === invItem.itemId);
+    return {
+      ...invItem,
+      ...(worldItem || { id: invItem.itemId, name: "Unknown Item", description: "", portable: false })
+    };
+  });
+}
+
 export function createInitialSession(world: World): SessionState {
   return {
     currentRoomId: world.startRoomId,
@@ -63,7 +76,8 @@ export function runTurn(world: World, session: SessionState, rawInput: string): 
   }
 
   if (normalized === "inv" || normalized === "inventory") {
-    const inv = session.inventory.map(i => world.items.find(w => w.id === i.itemId)?.name).join(", ") || "nothing";
+    const items = getInventoryItems(world, session);
+    const inv = items.length > 0 ? items.map(i => i.name).join(", ") : "nothing";
     return finish(session, "Inventory", `You are carrying: ${inv}.`);
   }
 
