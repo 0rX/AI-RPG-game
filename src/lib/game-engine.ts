@@ -1,11 +1,26 @@
 import type { EngineResult, SessionState, World, Direction } from "./game-types";
 
-export function createInitialSession(world: World): SessionState {
-  const room = world.rooms[world.startRoomId];
-  
-  if (!room) {
-    throw new Error(`Start room with ID "${world.startRoomId}" not found in world.`);
+/**
+ * Validates that the provided world object contains the necessary structure
+ * to initialize a session, specifically checking if the start room exists.
+ */
+export function validateWorld(world: World): { valid: boolean; error?: string } {
+  if (!world.rooms) {
+    return { valid: false, error: "World has no rooms defined." };
   }
+  if (!world.startRoomId || !world.rooms[world.startRoomId]) {
+    return { valid: false, error: `Start room with ID "${world.startRoomId}" not found in world.` };
+  }
+  return { valid: true };
+}
+
+export function createInitialSession(world: World): SessionState {
+  const validation = validateWorld(world);
+  if (!validation.valid) {
+    throw new Error(validation.error);
+  }
+
+  const room = world.rooms[world.startRoomId];
 
   return {
     currentRoomId: world.startRoomId,
