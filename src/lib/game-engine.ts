@@ -38,8 +38,8 @@ export function getInventoryItems(world: World, session: SessionState): (Item & 
 /**
  * Helper to identify visible exits from a room based on game state
  */
-export function getVisibleExits(room: Room, flags: string[]) {
-  return room.exits.filter(exit => !exit.hiddenUntilFlag || flags.includes(exit.hiddenUntilFlag));
+export function getVisibleExits(room: Room, session: SessionState) {
+  return room.exits.filter(exit => !exit.hiddenUntilFlag || session.flags.includes(exit.hiddenUntilFlag));
 }
 
 export function createInitialSession(world: World): SessionState {
@@ -93,7 +93,7 @@ export function runTurn(world: World, session: SessionState, rawInput: string): 
 
 function move(world: World, session: SessionState, direction: string): EngineResult {
   const room = getRoom(world, session.currentRoomId);
-  const exit = getVisibleExits(room, session.flags).find((candidate) => candidate.direction === direction);
+  const exit = getVisibleExits(room, session).find((candidate) => candidate.direction === direction);
 
   if (!exit) {
     return finish(session, "Move", `You cannot go ${direction} from here.`);
@@ -109,7 +109,7 @@ function move(world: World, session: SessionState, direction: string): EngineRes
 
 function describeRoom(world: World, session: SessionState) {
   const room = getRoom(world, session.currentRoomId);
-  const exits = getVisibleExits(room, session.flags).map((e) => e.direction).join(", ");
+  const exits = getVisibleExits(room, session).map((e) => e.direction).join(", ");
   return `${room.title}\n${room.description}\n\nExits: ${exits || "none"}`;
 }
 
