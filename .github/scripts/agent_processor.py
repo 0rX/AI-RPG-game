@@ -43,11 +43,10 @@ def main():
     Only modify relevant files or create new files if requested. Do not output conversational text outside of these tags.
     """
 
-    # 1. Swapped to the universally supported gemini-2.5-flash route for v1beta APIs
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
+    # ─── UPDATED TO GEMINI 3.1 FLASH LITE ───
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key={api_key}"
     headers = {'Content-Type': 'application/json'}
     
-    # 2. Re-structured the contents block exactly matching the developer specs
     payload = {
         "contents": [
             {
@@ -61,7 +60,6 @@ def main():
     print("📡 Sending code context and prompt to AI model...")
     response = requests.post(url, headers=headers, json=payload)
     
-    # Debug response statuses cleanly
     if response.status_code != 200:
         print(f"❌ API Error Response (Status {response.status_code}):")
         print(response.text)
