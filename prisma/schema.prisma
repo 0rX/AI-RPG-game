@@ -1,0 +1,635 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum AccountStatus {
+  ACTIVE
+  SUSPENDED
+  PENDING_DELETION
+}
+
+enum Visibility {
+  PRIVATE
+  UNLISTED
+  PUBLIC
+}
+
+enum PublicationStatus {
+  DRAFT
+  PLAYTEST
+  PUBLISHED
+  ARCHIVED
+}
+
+enum ContentRating {
+  SAFE
+  MATURE
+  ADULT
+}
+
+enum SessionStatus {
+  ACTIVE
+  PAUSED
+  COMPLETED
+  ABANDONED
+  ARCHIVED
+}
+
+enum ActorType {
+  PLAYER
+  SYSTEM
+  NPC
+  ENGINE
+  AI
+}
+
+enum ItemType {
+  EQUIPMENT
+  CONSUMABLE
+  QUEST
+  CURRENCY
+  MISC
+}
+
+enum QuestStatus {
+  INACTIVE
+  ACTIVE
+  COMPLETED
+  FAILED
+}
+
+enum InferenceStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+model User {
+  id             BigInt        @id @default(autoincrement()) @db.UnsignedBigInt
+  publicId       String        @unique @default(uuid()) @map("public_id") @db.Char(36)
+  email          String        @unique @db.VarChar(255)
+  username       String        @unique @db.VarChar(50)
+  passwordHash   String?       @map("password_hash") @db.VarChar(255)
+  emailVerifiedAt DateTime?    @map("email_verified_at") @db.DateTime(3)
+  status         AccountStatus @default(ACTIVE)
+  displayName    String        @map("display_name") @db.VarChar(100)
+  lastLoginAt    DateTime?     @map("last_login_at") @db.DateTime(3)
+  createdAt      DateTime      @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt      DateTime      @updatedAt @map("updated_at") @db.DateTime(3)
+
+  profile        UserProfile?
+  worlds         World[]
+  personas       PlayerPersona[]
+  saveSlots      SaveSlot[]
+  sessions       GameSession[]
+
+  @@map("users")
+}
+
+model UserProfile {
+  userId                  BigInt   @id @map("user_id") @db.UnsignedBigInt
+  bio                     String?  @db.Text
+  locale                  String?  @db.VarChar(16)
+  timezone                String?  @db.VarChar(64)
+  contentRatingPreference String   @default("mature") @map("content_rating_preference") @db.VarChar(24)
+  profileVisibility       String   @default("public") @map("profile_visibility") @db.VarChar(24)
+  createdAt               DateTime @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt               DateTime @updatedAt @map("updated_at") @db.DateTime(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_profiles")
+}
+
+model World {
+  id                 BigInt            @id @default(autoincrement()) @db.UnsignedBigInt
+  publicId           String            @unique @default(uuid()) @map("public_id") @db.Char(36)
+  ownerUserId        BigInt            @map("owner_user_id") @db.UnsignedBigInt
+  title              String            @db.VarChar(200)
+  slug               String            @unique @db.VarChar(150)
+  shortDescription   String?           @map("short_description") @db.VarChar(500)
+  description        String?           @db.MediumText
+  visibility         Visibility        @default(PRIVATE)
+  publicationStatus  PublicationStatus @default(DRAFT) @map("publication_status")
+  contentRating      ContentRating     @default(MATURE) @map("content_rating")
+  defaultStartRoomId BigInt?           @map("default_start_room_id") @db.UnsignedBigInt
+  versionNumber      Int               @default(1) @map("version_number") @db.UnsignedInt
+  createdAt          DateTime          @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt          DateTime          @updatedAt @map("updated_at") @db.DateTime(3)
+  deletedAt          DateTime?         @map("deleted_at") @db.DateTime(3)
+
+  owner              User              @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)
+  rooms              WorldRoom[]
+  exits              WorldRoomExit[]
+  loreEntries        WorldLoreEntry[]
+  characters         WorldCharacter[]
+  items              WorldItem[]
+  quests             WorldQuest[]
+  events             WorldEvent[]
+  aiConfig           WorldAiConfig?
+  personas           PlayerPersona[]
+  saveSlots          SaveSlot[]
+  sessions           GameSession[]
+
+  @@index([ownerUserId, publicationStatus])
+  @@index([visibility, publicationStatus, contentRating])
+  @@map("worlds")
+}
+
+model WorldRoom {
+  id                 BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
+  publicId           String    @unique @default(uuid()) @map("public_id") @db.Char(36)
+  worldId            BigInt    @map("world_id") @db.UnsignedBigInt
+  keyName            String    @map("key_name") @db.VarChar(100)
+  title              String    @db.VarChar(200)
+  shortDescription   String?   @map("short_description") @db.VarChar(500)
+  longDescription    String    @map("long_description") @db.MediumText
+  mapX               Int?      @map("map_x")
+  mapY               Int?      @map("map_y")
+  mapZ               Int?      @map("map_z")
+  entryText          String?   @map("entry_text") @db.Text
+  ambientPromptBlock String?   @map("ambient_prompt_block") @db.MediumText
+  isStartRoom        Boolean   @default(false) @map("is_start_room")
+  isDiscoverable     Boolean   @default(true) @map("is_discoverable")
+  createdAt          DateTime  @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt          DateTime  @updatedAt @map("updated_at") @db.DateTime(3)
+
+  world              World     @relation(fields: [worldId], references: [id], onDelete: Cascade)
+  exitsFrom          WorldRoomExit[] @relation("ExitSource")
+  exitsTo            WorldRoomExit[] @relation("ExitTarget")
+  characters         WorldCharacter[]
+  roomItems          WorldRoomItem[]
+  sessions           GameSession[]
+
+  @@unique([worldId, keyName])
+  @@index([worldId, isStartRoom])
+  @@map("world_rooms")
+}
+
+model WorldRoomExit {
+  id                BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  worldId           BigInt   @map("world_id") @db.UnsignedBigInt
+  sourceRoomId      BigInt   @map("source_room_id") @db.UnsignedBigInt
+  targetRoomId      BigInt   @map("target_room_id") @db.UnsignedBigInt
+  direction         String   @db.VarChar(32)
+  label             String?  @db.VarChar(100)
+  travelText        String?  @map("travel_text") @db.Text
+  isHidden          Boolean  @default(false) @map("is_hidden")
+  isLocked          Boolean  @default(false) @map("is_locked")
+  lockConditionJson Json?    @map("lock_condition_json")
+  createdAt         DateTime @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt         DateTime @updatedAt @map("updated_at") @db.DateTime(3)
+
+  world             World     @relation(fields: [worldId], references: [id], onDelete: Cascade)
+  sourceRoom        WorldRoom @relation("ExitSource", fields: [sourceRoomId], references: [id], onDelete: Cascade)
+  targetRoom        WorldRoom @relation("ExitTarget", fields: [targetRoomId], references: [id], onDelete: Cascade)
+
+  @@unique([sourceRoomId, direction])
+  @@index([worldId, sourceRoomId])
+  @@index([worldId, targetRoomId])
+  @@map("world_room_exits")
+}
+
+model WorldLoreEntry {
+  id          BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  worldId     BigInt   @map("world_id") @db.UnsignedBigInt
+  title       String   @db.VarChar(200)
+  slug        String   @db.VarChar(180)
+  category    String?  @db.VarChar(80)
+  bodyMarkdown String  @map("body_markdown") @db.MediumText
+  visibility  String   @default("player_discoverable") @db.VarChar(40)
+  createdAt   DateTime @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.DateTime(3)
+
+  world       World    @relation(fields: [worldId], references: [id], onDelete: Cascade)
+
+  @@unique([worldId, slug])
+  @@index([worldId, category])
+  @@map("world_lore_entries")
+}
+
+model WorldCharacter {
+  id                 BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  publicId           String   @unique @default(uuid()) @map("public_id") @db.Char(36)
+  worldId            BigInt   @map("world_id") @db.UnsignedBigInt
+  keyName            String   @map("key_name") @db.VarChar(100)
+  roleType           String   @default("npc") @map("role_type") @db.VarChar(40)
+  displayName        String   @map("display_name") @db.VarChar(150)
+  shortDescription   String?  @map("short_description") @db.VarChar(500)
+  profileMarkdown    String?  @map("profile_markdown") @db.MediumText
+  personalityPrompt  String?  @map("personality_prompt") @db.MediumText
+  goalsPrompt        String?  @map("goals_prompt") @db.MediumText
+  speechStylePrompt  String?  @map("speech_style_prompt") @db.MediumText
+  defaultRoomId      BigInt?  @map("default_room_id") @db.UnsignedBigInt
+  isUnique           Boolean  @default(true) @map("is_unique")
+  isRecruitable      Boolean  @default(false) @map("is_recruitable")
+  isHidden           Boolean  @default(false) @map("is_hidden")
+  createdAt          DateTime @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt          DateTime @updatedAt @map("updated_at") @db.DateTime(3)
+
+  world              World    @relation(fields: [worldId], references: [id], onDelete: Cascade)
+  defaultRoom        WorldRoom? @relation(fields: [defaultRoomId], references: [id], onDelete: SetNull)
+  npcStates          SessionNpcState[]
+
+  @@unique([worldId, keyName])
+  @@index([worldId, roleType])
+  @@map("world_characters")
+}
+
+model WorldItem {
+  id          BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  publicId    String   @unique @default(uuid()) @map("public_id") @db.Char(36)
+  worldId     BigInt   @map("world_id") @db.UnsignedBigInt
+  keyName     String   @map("key_name") @db.VarChar(100)
+  itemType    ItemType @default(MISC) @map("item_type")
+  name        String   @db.VarChar(150)
+  description String?  @db.Text
+  stackable   Boolean  @default(false)
+  maxStackSize Int?    @map("max_stack_size") @db.UnsignedInt
+  itemRulesJson Json?  @map("item_rules_json")
+  createdAt   DateTime @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.DateTime(3)
+
+  world       World    @relation(fields: [worldId], references: [id], onDelete: Cascade)
+  roomItems   WorldRoomItem[]
+  inventoryItems SessionInventoryItem[]
+
+  @@unique([worldId, keyName])
+  @@index([worldId, itemType])
+  @@map("world_items")
+}
+
+model WorldRoomItem {
+  id        BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  roomId    BigInt   @map("room_id") @db.UnsignedBigInt
+  itemId    BigInt   @map("item_id") @db.UnsignedBigInt
+  quantity  Int      @default(1) @db.UnsignedInt
+  createdAt DateTime @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.DateTime(3)
+
+  room      WorldRoom @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  item      WorldItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@index([roomId, itemId])
+  @@map("world_room_items")
+}
+
+model WorldQuest {
+  id          BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  publicId    String   @unique @default(uuid()) @map("public_id") @db.Char(36)
+  worldId     BigInt   @map("world_id") @db.UnsignedBigInt
+  keyName     String   @map("key_name") @db.VarChar(100)
+  title       String   @db.VarChar(200)
+  description String?  @db.MediumText
+  category    String?  @db.VarChar(80)
+  startConditionJson Json? @map("start_condition_json")
+  completionConditionJson Json? @map("completion_condition_json")
+  rewardsJson Json? @map("rewards_json")
+  repeatable  Boolean  @default(false)
+  createdAt   DateTime @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.DateTime(3)
+
+  world       World    @relation(fields: [worldId], references: [id], onDelete: Cascade)
+  sessionStates SessionQuestState[]
+
+  @@unique([worldId, keyName])
+  @@index([worldId, category])
+  @@map("world_quests")
+}
+
+model WorldEvent {
+  id           BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  worldId      BigInt   @map("world_id") @db.UnsignedBigInt
+  keyName      String   @map("key_name") @db.VarChar(100)
+  title        String   @db.VarChar(200)
+  eventType    String   @map("event_type") @db.VarChar(50)
+  triggerConditionJson Json @map("trigger_condition_json")
+  effectDefinitionJson Json @map("effect_definition_json")
+  aiAssistMode String   @default("narration_only") @map("ai_assist_mode") @db.VarChar(40)
+  createdAt    DateTime @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.DateTime(3)
+
+  world        World    @relation(fields: [worldId], references: [id], onDelete: Cascade)
+
+  @@unique([worldId, keyName])
+  @@index([worldId, eventType])
+  @@map("world_events")
+}
+
+model PlayerPersona {
+  id            BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  publicId      String   @unique @default(uuid()) @map("public_id") @db.Char(36)
+  userId        BigInt   @map("user_id") @db.UnsignedBigInt
+  worldId       BigInt?  @map("world_id") @db.UnsignedBigInt
+  name          String   @db.VarChar(150)
+  description   String?  @db.Text
+  personaPrompt String?  @map("persona_prompt") @db.MediumText
+  isDefault     Boolean  @default(false) @map("is_default")
+  createdAt     DateTime @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt     DateTime @updatedAt @map("updated_at") @db.DateTime(3)
+
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  world         World?   @relation(fields: [worldId], references: [id], onDelete: Cascade)
+  saveSlots     SaveSlot[]
+  sessions      GameSession[]
+
+  @@index([userId, worldId])
+  @@map("player_personas")
+}
+
+model SaveSlot {
+  id            BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  userId        BigInt   @map("user_id") @db.UnsignedBigInt
+  worldId       BigInt   @map("world_id") @db.UnsignedBigInt
+  personaId     BigInt?  @map("persona_id") @db.UnsignedBigInt
+  slotName      String   @map("slot_name") @db.VarChar(150)
+  isAutosave    Boolean  @default(false) @map("is_autosave")
+  createdAt     DateTime @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt     DateTime @updatedAt @map("updated_at") @db.DateTime(3)
+
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  world         World    @relation(fields: [worldId], references: [id], onDelete: Cascade)
+  persona       PlayerPersona? @relation(fields: [personaId], references: [id], onDelete: SetNull)
+  sessions      GameSession[]
+
+  @@index([userId, worldId])
+  @@map("save_slots")
+}
+
+model GameSession {
+  id            BigInt        @id @default(autoincrement()) @db.UnsignedBigInt
+  publicId      String        @unique @default(uuid()) @map("public_id") @db.Char(36)
+  saveSlotId    BigInt?       @map("save_slot_id") @db.UnsignedBigInt
+  worldId       BigInt        @map("world_id") @db.UnsignedBigInt
+  ownerUserId   BigInt        @map("owner_user_id") @db.UnsignedBigInt
+  personaId     BigInt?       @map("persona_id") @db.UnsignedBigInt
+  status        SessionStatus @default(ACTIVE)
+  currentRoomId BigInt?       @map("current_room_id") @db.UnsignedBigInt
+  sessionName   String?       @map("session_name") @db.VarChar(150)
+  startedAt     DateTime      @default(now()) @map("started_at") @db.DateTime(3)
+  lastActiveAt  DateTime      @default(now()) @map("last_active_at") @db.DateTime(3)
+  endedAt       DateTime?     @map("ended_at") @db.DateTime(3)
+  createdAt     DateTime      @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt     DateTime      @updatedAt @map("updated_at") @db.DateTime(3)
+
+  saveSlot      SaveSlot?     @relation(fields: [saveSlotId], references: [id], onDelete: SetNull)
+  world         World         @relation(fields: [worldId], references: [id], onDelete: Cascade)
+  owner         User          @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)
+  persona       PlayerPersona? @relation(fields: [personaId], references: [id], onDelete: SetNull)
+  currentRoom   WorldRoom?    @relation(fields: [currentRoomId], references: [id], onDelete: SetNull)
+  turns         SessionTurn[]
+  npcStates     SessionNpcState[]
+  questStates   SessionQuestState[]
+  inventoryItems SessionInventoryItem[]
+  memorySummaries SessionMemorySummary[]
+  inferenceRequests InferenceRequest[]
+
+  @@index([ownerUserId, worldId, status])
+  @@index([saveSlotId, status])
+  @@map("game_sessions")
+}
+
+model SessionNpcState {
+  id            BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  sessionId     BigInt   @map("session_id") @db.UnsignedBigInt
+  characterId   BigInt   @map("character_id") @db.UnsignedBigInt
+  currentRoomId BigInt?  @map("current_room_id") @db.UnsignedBigInt
+  statsJson     Json?    @map("stats_json")
+  memorySummary String?  @map("memory_summary") @db.MediumText
+  flagsJson     Json?    @map("flags_json")
+  isActive      Boolean  @default(true) @map("is_active")
+  createdAt     DateTime @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt     DateTime @updatedAt @map("updated_at") @db.DateTime(3)
+
+  session       GameSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  character     WorldCharacter @relation(fields: [characterId], references: [id], onDelete: Cascade)
+
+  @@unique([sessionId, characterId])
+  @@index([sessionId, currentRoomId])
+  @@map("session_npc_states")
+}
+
+model SessionInventoryItem {
+  id          BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  sessionId   BigInt   @map("session_id") @db.UnsignedBigInt
+  ownerType   String   @map("owner_type") @db.VarChar(40)
+  ownerStateId BigInt  @map("owner_state_id") @db.UnsignedBigInt
+  itemId      BigInt   @map("item_id") @db.UnsignedBigInt
+  quantity    Int      @default(1) @db.UnsignedInt
+  itemStateJson Json?  @map("item_state_json")
+  createdAt   DateTime @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.DateTime(3)
+
+  session     GameSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  item        WorldItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId, ownerType, ownerStateId])
+  @@index([sessionId, itemId])
+  @@map("session_inventory_items")
+}
+
+model SessionQuestState {
+  id          BigInt      @id @default(autoincrement()) @db.UnsignedBigInt
+  sessionId   BigInt      @map("session_id") @db.UnsignedBigInt
+  questId     BigInt      @map("quest_id") @db.UnsignedBigInt
+  status      QuestStatus @default(INACTIVE)
+  progressJson Json?      @map("progress_json")
+  startedAt   DateTime?   @map("started_at") @db.DateTime(3)
+  completedAt DateTime?   @map("completed_at") @db.DateTime(3)
+  createdAt   DateTime    @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt   DateTime    @updatedAt @map("updated_at") @db.DateTime(3)
+
+  session     GameSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  quest       WorldQuest @relation(fields: [questId], references: [id], onDelete: Cascade)
+
+  @@unique([sessionId, questId])
+  @@index([sessionId, status])
+  @@map("session_quest_states")
+}
+
+model SessionTurn {
+  id               BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
+  sessionId        BigInt    @map("session_id") @db.UnsignedBigInt
+  turnNumber       Int       @map("turn_number") @db.UnsignedInt
+  actorType        ActorType @map("actor_type")
+  actorRefId       BigInt?   @map("actor_ref_id") @db.UnsignedBigInt
+  inputText        String?   @map("input_text") @db.MediumText
+  parsedActionJson Json?     @map("parsed_action_json")
+  engineResultJson Json?     @map("engine_result_json")
+  aiResponseText   String?   @map("ai_response_text") @db.MediumText
+  visibility       String    @default("normal") @db.VarChar(40)
+  createdAt        DateTime  @default(now()) @map("created_at") @db.DateTime(3)
+
+  session          GameSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  inferenceRequests InferenceRequest[]
+
+  @@unique([sessionId, turnNumber])
+  @@index([sessionId, createdAt])
+  @@map("session_turns")
+}
+
+model SessionMemorySummary {
+  id              BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  sessionId       BigInt   @map("session_id") @db.UnsignedBigInt
+  summaryType     String   @map("summary_type") @db.VarChar(40)
+  scopeRefId      BigInt?  @map("scope_ref_id") @db.UnsignedBigInt
+  sourceTurnStart Int      @map("source_turn_start") @db.UnsignedInt
+  sourceTurnEnd   Int      @map("source_turn_end") @db.UnsignedInt
+  summaryText     String   @map("summary_text") @db.MediumText
+  createdAt       DateTime @default(now()) @map("created_at") @db.DateTime(3)
+
+  session         GameSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId, summaryType, scopeRefId])
+  @@map("session_memory_summaries")
+}
+
+model AiProvider {
+  id         BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  keyName    String   @unique @map("key_name") @db.VarChar(100)
+  name       String   @db.VarChar(150)
+  apiBaseUrl String?  @map("api_base_url") @db.VarChar(255)
+  isEnabled  Boolean  @default(true) @map("is_enabled")
+  createdAt  DateTime @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt  DateTime @updatedAt @map("updated_at") @db.DateTime(3)
+
+  models     AiModel[]
+  presets    AiModelPreset[]
+  requests   InferenceRequest[]
+
+  @@map("ai_providers")
+}
+
+model AiModel {
+  id                  BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  providerId          BigInt   @map("provider_id") @db.UnsignedBigInt
+  modelKey            String   @map("model_key") @db.VarChar(150)
+  displayName         String   @map("display_name") @db.VarChar(150)
+  supportsStreaming   Boolean  @default(true) @map("supports_streaming")
+  supportsJsonMode    Boolean  @default(true) @map("supports_json_mode")
+  contextWindowTokens Int?     @map("context_window_tokens") @db.UnsignedInt
+  outputLimitTokens   Int?     @map("output_limit_tokens") @db.UnsignedInt
+  isEnabled           Boolean  @default(true) @map("is_enabled")
+  createdAt           DateTime @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt           DateTime @updatedAt @map("updated_at") @db.DateTime(3)
+
+  provider            AiProvider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  presets             AiModelPreset[]
+  requests            InferenceRequest[]
+
+  @@unique([providerId, modelKey])
+  @@map("ai_models")
+}
+
+model AiModelPreset {
+  id              BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  ownerType       String   @map("owner_type") @db.VarChar(40)
+  ownerRefId      BigInt?  @map("owner_ref_id") @db.UnsignedBigInt
+  providerId      BigInt   @map("provider_id") @db.UnsignedBigInt
+  modelId         BigInt   @map("model_id") @db.UnsignedBigInt
+  name            String   @db.VarChar(150)
+  temperature     Decimal? @db.Decimal(4, 3)
+  topP            Decimal? @map("top_p") @db.Decimal(4, 3)
+  maxOutputTokens Int?     @map("max_output_tokens") @db.UnsignedInt
+  extraParamsJson Json?    @map("extra_params_json")
+  createdAt       DateTime @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt       DateTime @updatedAt @map("updated_at") @db.DateTime(3)
+
+  provider        AiProvider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  model           AiModel @relation(fields: [modelId], references: [id], onDelete: Cascade)
+  worldConfigs    WorldAiConfig[]
+
+  @@index([ownerType, ownerRefId])
+  @@map("ai_model_presets")
+}
+
+model WorldAiConfig {
+  worldId                 BigInt   @id @map("world_id") @db.UnsignedBigInt
+  defaultModelPresetId    BigInt   @map("default_model_preset_id") @db.UnsignedBigInt
+  narrationPromptTemplate String?  @map("narration_prompt_template") @db.MediumText
+  npcDialoguePromptTemplate String? @map("npc_dialogue_prompt_template") @db.MediumText
+  actionParsePromptTemplate String? @map("action_parse_prompt_template") @db.MediumText
+  safetyPromptTemplate   String?   @map("safety_prompt_template") @db.MediumText
+  toolSchemaJson         Json?     @map("tool_schema_json")
+  createdAt              DateTime  @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt              DateTime  @updatedAt @map("updated_at") @db.DateTime(3)
+
+  world                  World @relation(fields: [worldId], references: [id], onDelete: Cascade)
+  defaultPreset          AiModelPreset @relation(fields: [defaultModelPresetId], references: [id])
+
+  @@map("world_ai_configs")
+}
+
+model InferenceRequest {
+  id                  BigInt          @id @default(autoincrement()) @db.UnsignedBigInt
+  sessionId           BigInt?         @map("session_id") @db.UnsignedBigInt
+  worldId             BigInt?         @map("world_id") @db.UnsignedBigInt
+  turnId              BigInt?         @map("turn_id") @db.UnsignedBigInt
+  providerId          BigInt          @map("provider_id") @db.UnsignedBigInt
+  modelId             BigInt          @map("model_id") @db.UnsignedBigInt
+  requestType         String          @map("request_type") @db.VarChar(40)
+  promptHash          String?         @map("prompt_hash") @db.Char(64)
+  requestPayloadJson  Json?           @map("request_payload_json")
+  responsePayloadJson Json?           @map("response_payload_json")
+  outputText          String?         @map("output_text") @db.MediumText
+  status              InferenceStatus @default(PENDING)
+  errorMessage        String?         @map("error_message") @db.Text
+  startedAt           DateTime        @default(now()) @map("started_at") @db.DateTime(3)
+  completedAt         DateTime?       @map("completed_at") @db.DateTime(3)
+  createdAt           DateTime        @default(now()) @map("created_at") @db.DateTime(3)
+
+  session             GameSession? @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+  turn                SessionTurn? @relation(fields: [turnId], references: [id], onDelete: SetNull)
+  provider            AiProvider @relation(fields: [providerId], references: [id])
+  model               AiModel @relation(fields: [modelId], references: [id])
+  usage               InferenceUsageLog?
+
+  @@index([sessionId, requestType, startedAt])
+  @@index([worldId, requestType, startedAt])
+  @@index([turnId])
+  @@map("inference_requests")
+}
+
+model InferenceUsageLog {
+  id                 BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  inferenceRequestId BigInt   @unique @map("inference_request_id") @db.UnsignedBigInt
+  inputTokens        Int?     @map("input_tokens") @db.UnsignedInt
+  outputTokens       Int?     @map("output_tokens") @db.UnsignedInt
+  cachedTokens       Int?     @map("cached_tokens") @db.UnsignedInt
+  estimatedCostUsd   Decimal? @map("estimated_cost_usd") @db.Decimal(12, 6)
+  createdAt          DateTime @default(now()) @map("created_at") @db.DateTime(3)
+
+  inferenceRequest   InferenceRequest @relation(fields: [inferenceRequestId], references: [id], onDelete: Cascade)
+
+  @@map("inference_usage_logs")
+}
+
+model MediaFile {
+  id            BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  publicId      String   @unique @default(uuid()) @map("public_id") @db.Char(36)
+  ownerUserId   BigInt?  @map("owner_user_id") @db.UnsignedBigInt
+  storageDisk   String   @default("local") @map("storage_disk") @db.VarChar(50)
+  storagePath   String   @map("storage_path") @db.VarChar(500)
+  originalName  String   @map("original_name") @db.VarChar(255)
+  mimeType      String   @map("mime_type") @db.VarChar(150)
+  extension     String?  @db.VarChar(20)
+  sizeBytes     BigInt   @map("size_bytes") @db.UnsignedBigInt
+  sha256Hash    String?  @map("sha256_hash") @db.Char(64)
+  imageWidth    Int?     @map("image_width") @db.UnsignedInt
+  imageHeight   Int?     @map("image_height") @db.UnsignedInt
+  purpose       String   @default("other") @db.VarChar(40)
+  visibility    String   @default("private") @db.VarChar(40)
+  createdAt     DateTime @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt     DateTime @updatedAt @map("updated_at") @db.DateTime(3)
+  deletedAt     DateTime? @map("deleted_at") @db.DateTime(3)
+
+  @@index([ownerUserId, purpose])
+  @@index([sha256Hash])
+  @@map("media_files")
+}
