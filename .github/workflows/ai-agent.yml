@@ -1,0 +1,41 @@
+name: AI Developer Agent
+
+on:
+  issues:
+    types: [opened, edited]
+
+jobs:
+  code-agent:
+    if: contains(github.event.issue.labels.*.name, 'ai-code')
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install requests
+
+    - name: Run AI Agent Refactor
+      env:
+        GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }} 
+        ISSUE_BODY: ${{ github.event.issue.body }}
+        ISSUE_TITLE: ${{ github.event.issue.title }}
+      run: |
+        python .github/scripts/agent_processor.py
+
+    - name: Create Pull Request with Changes
+      uses: peter-evans/create-pull-request@v6
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+        commit-message: "ai: automatic game mechanic update from issue #${{ github.event.issue.number }}"
+        title: "AI Update: ${{ github.event.issue.title }}"
+        body: "This PR was generated automatically by the AI Agent in response to your game enhancement request in Issue #${{ github.event.issue.number }}."
+        branch: "ai-feature-${{ github.event.issue.number }}"
