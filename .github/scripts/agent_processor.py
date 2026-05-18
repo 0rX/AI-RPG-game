@@ -43,23 +43,37 @@ def main():
     Only modify relevant files or create new files if requested. Do not output conversational text outside of these tags.
     """
 
-    # Fixed Endpoint utilizing the correct API path string mapping
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key={api_key}"
+    # 1. Swapped to the universally supported gemini-2.5-flash route for v1beta APIs
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
     headers = {'Content-Type': 'application/json'}
+    
+    # 2. Re-structured the contents block exactly matching the developer specs
     payload = {
-        "contents": [{
-            "parts": [{"text": prompt}]
-        }]
+        "contents": [
+            {
+                "parts": [
+                    {"text": prompt}
+                ]
+            }
+        ]
     }
     
     print("📡 Sending code context and prompt to AI model...")
-    response = requests.post(url, headers=headers, json=payload).json()
+    response = requests.post(url, headers=headers, json=payload)
+    
+    # Debug response statuses cleanly
+    if response.status_code != 200:
+        print(f"❌ API Error Response (Status {response.status_code}):")
+        print(response.text)
+        return
+
+    response_data = response.json()
     
     try:
-        ai_text = response['candidates'][0]['content']['parts'][0]['text']
+        ai_text = response_data['candidates'][0]['content']['parts'][0]['text']
     except (KeyError, IndexError):
-        print("❌ Error parsing response from AI API. Full payload:")
-        print(json.dumps(response, indent=2))
+        print("❌ Error parsing response structure from AI API. Full payload:")
+        print(json.dumps(response_data, indent=2))
         return
     
     # Parse the output stream back into real project files
