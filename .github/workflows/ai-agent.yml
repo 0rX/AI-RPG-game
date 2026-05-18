@@ -4,11 +4,10 @@ on:
   issues:
     types: [opened, edited]
 
-# ─── ADD THIS BLOCK TO FIX THE 403 ERROR ───
 permissions:
-  contents: write       # Allows the runner to create branches and push code
-  issues: read          # Allows the runner to look at the trigger issue
-  pull-requests: write  # Allows the runner to automatically create the PR
+  contents: write
+  issues: write
+  pull-requests: write
 
 jobs:
   code-agent:
@@ -38,10 +37,20 @@ jobs:
         python .github/scripts/agent_processor.py
 
     - name: Create Pull Request with Changes
+      id: cpr
       uses: peter-evans/create-pull-request@v6
       with:
-        token: ${{ secrets.GITHUB_TOKEN }}
+        token: ${{ secrets.GH_PAT }}
         commit-message: "ai: automatic game mechanic update from issue #${{ github.event.issue.number }}"
         title: "AI Update: ${{ github.event.issue.title }}"
-        body: "This PR was generated automatically by the AI Agent in response to your game enhancement request in Issue #${{ github.event.issue.number }}."
+        body: "This PR was generated automatically by the AI Agent in response to Issue #${{ github.event.issue.number }}."
         branch: "ai-feature-${{ github.event.issue.number }}"
+
+    - name: Auto-Approve Pull Request
+      if: steps.cpr.outputs.pull-request-operation == 'created'
+      env:
+        GH_TOKEN: ${{ secrets.GH_PAT }}
+        PR_URL: ${{ steps.cpr.outputs.pull-request-url }}
+      run: |
+        echo "Approving Pull Request: $PR_URL"
+        gh pr review "$PR_URL" --approve --body "Automated approval from AI Developer Agent workflow using Fine-Grained Token."
