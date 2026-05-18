@@ -43,8 +43,8 @@ def main():
     Only modify relevant files or create new files if requested. Do not output conversational text outside of these tags.
     """
 
-    # Hit the Google Gemini API endpoint
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
+    # Fixed Endpoint utilizing the correct API path string mapping
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key={api_key}"
     headers = {'Content-Type': 'application/json'}
     payload = {
         "contents": [{
