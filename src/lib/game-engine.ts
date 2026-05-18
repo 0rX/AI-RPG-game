@@ -1,4 +1,4 @@
-import type { EngineResult, Item, Room, SessionState, Turn, World } from "./game-types";
+import type { EngineResult, Item, Room, SessionState, Turn, World, PlayerInventoryItem } from "./game-types";
 
 const directionAliases: Record<string, string> = {
   n: "north",
@@ -22,10 +22,18 @@ function normalizeDirection(input: string) {
   return direction && directionSet.has(direction) ? direction : null;
 }
 
+/**
+ * Rolls a standard six-sided die (1-6).
+ */
+function rollD6(): number {
+  return Math.floor(Math.random() * 6) + 1;
+}
+
 export function createInitialSession(world: World): SessionState {
   return {
     currentRoomId: world.startRoomId,
-    inventoryItemIds: [],
+    // inventoryItemIds: [], // Old, replaced
+    inventory: [], // New inventory array
     flags: [],
     completedQuestIds: [],
     turns: [
@@ -47,10 +55,19 @@ export function getRoom(world: World, roomId: string): Room {
   return room;
 }
 
-export function getInventoryItems(world: World, session: SessionState): Item[] {
-  return session.inventoryItemIds
-    .map((itemId) => world.items.find((item) => item.id === itemId))
-    .filter((item): item is Item => Boolean(item));
+/**
+ * Retrieves the player's inventory items, merging their world definitions with session-specific state (like current durability).
+ */
+export function getInventoryItems(world: World, session: SessionState): (Item & { currentDurability: number })[] {
+  return session.inventory
+    .map(sessionItem => {
+      const worldItem = world.items.find(item => item.id === sessionItem.itemId);
+      if (worldItem) {
+        return { ...worldItem, currentDurability: sessionItem.currentDurability };
+      }
+      return null;
+    })
+    .filter((item): item is (Item & { currentDurability: number }) => Boolean(item));
 }
 
 export function visibleExits(world: World, session: SessionState) {
@@ -117,7 +134,8 @@ function move(world: World, session: SessionState, turns: Turn[], direction: str
     return finish(session, turns, "Move blocked", `There is no ${direction} exit from ${room.title}.`);
   }
 
-  if (exit.lockedByItemId && !session.inventoryItemIds.includes(exit.lockedByItemId)) {
+  // Check if exit is locked by an item the player possesses (using the new inventory structure)
+  if (exit.lockedByItemId && !session.inventory.some(invItem => invItem.itemId === exit.lockedByItemId)) {
     const item = world.items.find((candidate) => candidate.id === exit.lockedByItemId);
     return finish(session, turns, "Locked exit", `${exit.label ?? "The way"} is locked. ${item ? `You need the ${item.name}.` : "You need the right key."}`);
   }
@@ -153,10 +171,20 @@ function takeItem(world: World, session: SessionState, turns: Turn[], itemName: 
     return finish(session, turns, "Take failed", `The ${item.name} is not something you can carry.`);
   }
 
+  // Add the item to the new inventory structure with initial durability
+  const newInventory: PlayerInventoryItem[] = [
+    ...session.inventory,
+    {
+      itemId: item.id,
+      currentDurability: item.maxDurability ?? 5 // Default durability to 5 if not specified
+    }
+  ];
+
   return finish(
     {
       ...session,
-      inventoryItemIds: unique([...session.inventoryItemIds, item.id]),
+      // inventoryItemIds: unique([...session.inventoryItemIds, item.id]), // Old, replaced
+      inventory: newInventory, // New inventory update
       flags: addFlags(session.flags, [`has_${item.id}`])
     },
     turns,
@@ -166,20 +194,82 @@ function takeItem(world: World, session: SessionState, turns: Turn[], itemName: 
 }
 
 function activateItem(world: World, session: SessionState, turns: Turn[], itemName: string): EngineResult {
-  const item = getInventoryItems(world, session).find((candidate) => candidate.name.toLowerCase().includes(itemName));
+  // Retrieve inventory items with their current durability state
+  const inventoryItemsWithDurability = getInventoryItems(world, session);
+  const itemToActivate = inventoryItemsWithDurability.find((candidate) => candidate.name.toLowerCase().includes(itemName));
 
-  if (!item) {
+  if (!itemToActivate) {
     return finish(session, turns, "Use failed", `You are not carrying "${itemName}".`);
+  }
+
+  let narration = itemToActivate.useText ?? `You test the ${itemToActivate.name}, but the moment is not ready for it yet.`;
+  let newInventory = [...session.inventory]; // Create a mutable copy of the inventory
+  let flags = [...session.flags]; // Create a mutable copy of flags
+
+  // --- Critical Failure Mechanic ---
+  const roll = rollD6();
+  if (roll === 1) {
+    let criticalFailureNarration = `Oh no! You fumble the ${itemToActivate.name} badly! A catastrophic complication occurs. `;
+    let damagedItem: PlayerInventoryItem | undefined = undefined;
+    let damagedItemIndex = -1;
+
+    // Prioritize damaging the item that was just used, if it has durability
+    const activeItemDurability = itemToActivate.currentDurability;
+    if (activeItemDurability !== undefined && activeItemDurability > 0) {
+      damagedItemIndex = newInventory.findIndex(invItem => invItem.itemId === itemToActivate.itemId);
+      if (damagedItemIndex !== -1) {
+        damagedItem = newInventory[damagedItemIndex];
+      }
+    }
+
+    // If the activated item couldn't be damaged (e.g., already broken or no durability),
+    // find another portable item in inventory with durability to damage
+    if (!damagedItem) {
+      const potentialOtherDamagedItems = newInventory.filter(
+        invItem => invItem.itemId !== itemToActivate.itemId && invItem.currentDurability > 0
+      );
+      if (potentialOtherDamagedItems.length > 0) {
+        const randomIndex = Math.floor(Math.random() * potentialOtherDamagedItems.length);
+        damagedItem = potentialOtherDamagedItems[randomIndex];
+        damagedItemIndex = newInventory.findIndex(invItem => invItem.itemId === damagedItem?.itemId);
+      }
+    }
+
+    if (damagedItem && damagedItemIndex !== -1) {
+      damagedItem.currentDurability--;
+      const damagedWorldItem = world.items.find(i => i.id === damagedItem!.itemId);
+      const damagedItemName = damagedWorldItem?.name ?? "an unknown item";
+
+      if (damagedItem.currentDurability <= 0) {
+        criticalFailureNarration += `Your ${damagedItemName} shatters into pieces! It's now useless and removed from your inventory. `;
+        newInventory.splice(damagedItemIndex, 1); // Remove the broken item
+        // Remove the 'has_' flag for the broken item
+        flags = flags.filter(flag => flag !== `has_${damagedItem!.itemId}`);
+      } else {
+        criticalFailureNarration += `Your ${damagedItemName} takes a beating, its durability reduced to ${damagedItem.currentDurability}. `;
+        newInventory[damagedItemIndex] = damagedItem; // Update the item in the inventory with new durability
+      }
+    } else {
+      criticalFailureNarration += `You manage to avoid serious damage to your gear, but the setback is palpable. `;
+    }
+    narration = criticalFailureNarration + narration; // Prepend failure to original use text
+  }
+  // --- End Critical Failure Mechanic ---
+
+  // Apply item's flag grant after potential critical failure
+  if (itemToActivate.grantsFlag) {
+    flags = addFlags(flags, [itemToActivate.grantsFlag]);
   }
 
   return finish(
     {
       ...session,
-      flags: addFlags(session.flags, item.grantsFlag ? [item.grantsFlag] : [])
+      inventory: newInventory,
+      flags: flags
     },
     turns,
-    `Use ${item.name}`,
-    item.useText ?? `You test the ${item.name}, but the moment is not ready for it yet.`
+    `Use ${itemToActivate.name}`,
+    narration
   );
 }
 
@@ -209,7 +299,7 @@ function talkToNpc(world: World, session: SessionState, turns: Turn[], normalize
 function describeRoom(world: World, session: SessionState) {
   const room = getRoom(world, session.currentRoomId);
   const exits = visibleExits(world, session).map((exit) => exit.direction).join(", ") || "none";
-  const items = world.items.filter((item) => room.itemIds.includes(item.id) && !session.inventoryItemIds.includes(item.id));
+  const items = world.items.filter((item) => room.itemIds.includes(item.id) && !session.inventory.some(invItem => invItem.itemId === item.id));
   const npcs = world.npcs.filter((npc) => room.npcIds.includes(npc.id));
   return [
     room.description,

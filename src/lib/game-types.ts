@@ -33,6 +33,7 @@ export type Npc = {
   questFlag?: string;
 };
 
+// Represents an item definition from the world, not a specific instance in inventory
 export type Item = {
   id: string;
   name: string;
@@ -40,6 +41,7 @@ export type Item = {
   portable: boolean;
   useText?: string;
   grantsFlag?: string;
+  maxDurability?: number; // Added: Max durability for items that can break
 };
 
 export type Quest = {
@@ -76,9 +78,16 @@ export type Turn = {
   actionLabel?: string;
 };
 
+// Represents a specific instance of an item in a player's inventory
+export type PlayerInventoryItem = {
+  itemId: string;
+  currentDurability: number;
+};
+
 export type SessionState = {
   currentRoomId: string;
-  inventoryItemIds: string[];
+  // inventoryItemIds: string[]; // Replaced with a richer inventory type
+  inventory: PlayerInventoryItem[]; // Added: Tracks specific item instances and their state
   flags: string[];
   completedQuestIds: string[];
   turns: Turn[];
